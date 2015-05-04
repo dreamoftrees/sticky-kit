@@ -13,10 +13,12 @@
 
   $.fn.stick_in_parent = function(opts) {
     var doc, elm, enable_bottoming, fn, i, inner_scrolling, len, manual_spacer, offset_top, outer_width, parent_selector, recalc_every, sticky_class;
+    var view_height = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
     if (opts == null) {
       opts = {};
     }
     sticky_class = opts.sticky_class, inner_scrolling = opts.inner_scrolling, recalc_every = opts.recalc_every, parent_selector = opts.parent, offset_top = opts.offset_top, manual_spacer = opts.spacer, enable_bottoming = opts.bottoming;
+    var stick_bottom = opts.stick_bottom || false;
     if (offset_top == null) {
       offset_top = 0;
     }
@@ -49,6 +51,7 @@
     };
     fn = function(elm, padding_bottom, parent_top, parent_height, top, height, el_float, detached) {
       var bottomed, detach, fixed, last_pos, last_scroll_height, offset, parent, recalc, recalc_and_tick, recalc_counter, spacer, tick;
+      var topped;
       if (elm.data("sticky_kit")) {
         return;
       }
@@ -78,9 +81,12 @@
         padding_bottom = parseInt(parent.css("padding-bottom"), 10);
         parent_top = parent.offset().top + border_top + padding_top;
         parent_height = parent.height();
+        view_height = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
+
         if (fixed) {
           fixed = false;
           bottomed = false;
+          topped = false;
           if (manual_spacer == null) {
             elm.insertAfter(spacer);
             spacer.detach();
@@ -151,21 +157,62 @@
               }).trigger("sticky_kit:unbottom");
             }
           }
-          if (scroll < top) {
-            fixed = false;
-            offset = offset_top;
-            if (manual_spacer == null) {
-              if (el_float === "left" || el_float === "right") {
-                elm.insertAfter(spacer);
+
+          if(stick_bottom) {
+            var scroll_view_bottom = scroll+view_height;
+            var parent_bottom = top+height;
+            var parent_end = parent_top+parent_height;
+
+            // Stick to the top - don't go past the parent top
+            if(parent_top+offset_top > scroll_view_bottom) {
+              if(!topped) {
+                topped = true;
+                elm.css({
+                  position: "absolute",
+                  bottom: "auto",
+                  top: offset_top-height
+                }).trigger("sticky_kit:top");
               }
-              spacer.detach();
+            } else if(topped) {
+              // Stick to bottom
+              topped = false;
+              elm.css({
+                position: "fixed",
+                bottom: 0,
+                top: 'auto'
+              }).trigger("sticky_kit:untop");
             }
-            css = {
-              position: "",
-              width: "",
-              top: ""
-            };
-            elm.css(css).removeClass(sticky_class).trigger("sticky_kit:unstick");
+
+            // When Scroll past bottom end - leave at bottom
+            if(!topped) {
+              if (scroll_view_bottom > parent_end) {
+                fixed = false;
+                css = {
+                  position: "",
+                  width: "",
+                  bottom: ""
+                };
+                elm.css(css).removeClass(sticky_class).trigger("sticky_kit:unstick");
+                spacer.detach();
+              }
+            }
+          } else {
+            if (scroll < top) {
+              fixed = false;
+              offset = offset_top;
+              if (manual_spacer == null) {
+                if (el_float === "left" || el_float === "right") {
+                  elm.insertAfter(spacer);
+                }
+                spacer.detach();
+              }
+              css = {
+                position: "",
+                width: "",
+                top: ""
+              };
+              elm.css(css).removeClass(sticky_class).trigger("sticky_kit:unstick");
+            }
           }
           if (inner_scrolling) {
             win_height = win.height();
@@ -183,21 +230,76 @@
             }
           }
         } else {
-          if (scroll > top) {
-            fixed = true;
-            css = {
-              position: "fixed",
-              top: offset
-            };
-            css.width = elm.css("box-sizing") === "border-box" ? elm.outerWidth() + "px" : elm.width() + "px";
-            elm.css(css).addClass(sticky_class);
-            if (manual_spacer == null) {
-              elm.after(spacer);
-              if (el_float === "left" || el_float === "right") {
-                spacer.append(elm);
+
+          if(stick_bottom) {
+            // Check to see if the element should be stuck to view bottom
+            var scroll_view_bottom = scroll+view_height;
+            var parent_bottom = top+height;
+            var parent_end = parent_top+parent_height;
+
+            // Check if the panel should be topped out
+            if(parent_top+offset_top > scroll_view_bottom) {
+              if(!topped) {
+                topped = true;
+                var css_width = elm.css("box-sizing") === "border-box" ? elm.outerWidth() + "px" : elm.width() + "px";
+                elm.css({
+                  position: "absolute",
+                  bottom: "auto",
+                  top: offset_top-height,
+                  width: css_width
+                }).trigger("sticky_kit:top");
+              }
+            } else if(scroll_view_bottom < parent_end) {
+
+              // While the panel is still before the end make sure it's sticking to bottom
+              // Stick to bottom
+              topped = false;
+              var css_width = elm.css("box-sizing") === "border-box" ? elm.outerWidth() + "px" : elm.width() + "px";
+              elm.css({
+                position: "fixed",
+                bottom: 0,
+                top: 'auto',
+                width: css_width
+              }).trigger("sticky_kit:untop");
+            }
+
+            if(!topped) {
+
+              // If it's not topped and before top set as fixed
+              if (scroll_view_bottom - height < parent_bottom + height) {
+                fixed = true;
+                css = {
+                  position: "fixed",
+                  bottom: 0
+                };
+                css.width = elm.css("box-sizing") === "border-box" ? elm.outerWidth() + "px" : elm.width() + "px";
+                elm.css(css).addClass(sticky_class);
+                if (manual_spacer == null) {
+                  elm.after(spacer);
+                  if (el_float === "left" || el_float === "right") {
+                    spacer.append(elm);
+                  }
+                }
+                elm.trigger("sticky_kit:stick");
               }
             }
-            elm.trigger("sticky_kit:stick");
+          } else {
+            if (scroll > top) {
+              fixed = true;
+              css = {
+                position: "fixed",
+                top: offset
+              };
+              css.width = elm.css("box-sizing") === "border-box" ? elm.outerWidth() + "px" : elm.width() + "px";
+              elm.css(css).addClass(sticky_class);
+              if (manual_spacer == null) {
+                elm.after(spacer);
+                if (el_float === "left" || el_float === "right") {
+                  spacer.append(elm);
+                }
+              }
+              elm.trigger("sticky_kit:stick");
+            }
           }
         }
         if (fixed && enable_bottoming) {
